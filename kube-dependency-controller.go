@@ -15,7 +15,6 @@ import (
 	"strings"
 	"time"
 
-	core "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -58,7 +57,7 @@ func buildExternalConfig(kubeconfig *string) *rest.Config {
 
 func parseDependenciesString(dependencies string) []dependency {
 	var dependenciesList []dependency
-	dependenciesArray := strings.Split(dependencies, ",")
+	dependenciesArray := strings.Split(strings.Replace(dependencies, " ", "", -1), ",")
 	for _, element := range dependenciesArray {
 		dependencyElements := strings.Split(element, "/")
 		dep := dependency{
@@ -116,12 +115,11 @@ func main() {
 		panic(err.Error())
 	}
 
-	deploymentsClient := clientset.AppsV1().Deployments(core.NamespaceDefault)
-
 	for _, dependency := range dependencies {
 
 		switch dependency.dependencyType {
 		case "deployment":
+			deploymentsClient := clientset.AppsV1().Deployments(dependency.dependencyNamespace)
 			for exists := false; exists; exists = true {
 				list, err := deploymentsClient.List(metav1.ListOptions{})
 
@@ -147,7 +145,115 @@ func main() {
 
 				time.Sleep(5 * time.Second)
 			}
-			fmt.Print("ready")
+			fmt.Print("Deployment is ready\n")
+
+		case "daemonset":
+			daemonsetClient := clientset.AppsV1().DaemonSets(dependency.dependencyNamespace)
+			for exists := false; exists; exists = true {
+				list, err := daemonsetClient.List(metav1.ListOptions{})
+
+				if err != nil {
+					panic(err)
+				}
+
+				if inArray(dependency.dependencyName, list) {
+					for ready := false; ready; ready = true {
+						daemonset, err := daemonsetClient.Get(dependency.dependencyName, metav1.GetOptions{})
+
+						if err != nil {
+							panic(err)
+						}
+
+						if daemonset.Status.NumberAvailable == daemonset.Status.NumberReady {
+							ready = true
+						} else {
+							time.Sleep(5 * time.Second)
+						}
+					}
+				}
+
+				time.Sleep(5 * time.Second)
+			}
+			fmt.Print("Daemonset is ready\n")
+
+		case "statefulset":
+			statefulsetClient := clientset.AppsV1().StatefulSets(dependency.dependencyNamespace)
+			for exists := false; exists; exists = true {
+				list, err := statefulsetClient.List(metav1.ListOptions{})
+
+				if err != nil {
+					panic(err)
+				}
+
+				if inArray(dependency.dependencyName, list) {
+					for ready := false; ready; ready = true {
+						statefulset, err := statefulsetClient.Get(dependency.dependencyName, metav1.GetOptions{})
+
+						if err != nil {
+							panic(err)
+						}
+
+						if statefulset.Status.Replicas == statefulset.Status.ReadyReplicas {
+							ready = true
+						} else {
+							time.Sleep(5 * time.Second)
+						}
+					}
+				}
+
+				time.Sleep(5 * time.Second)
+			}
+			fmt.Print("Statefulset is ready\n")
+		case "service":
+			serviceClient := clientset.Core().Services(dependency.dependencyNamespace)
+			for exists := false; exists; exists = true {
+				list, err := serviceClient.List(metav1.ListOptions{})
+
+				if err != nil {
+					panic(err)
+				}
+
+				if inArray(dependency.dependencyName, list) {
+					exists = true
+				}
+
+				time.Sleep(5 * time.Second)
+			}
+			fmt.Print("Service exists\n")
+
+		case "configmap":
+			configmapClient := clientset.Core().ConfigMaps(dependency.dependencyNamespace)
+			for exists := false; exists; exists = true {
+				list, err := configmapClient.List(metav1.ListOptions{})
+
+				if err != nil {
+					panic(err)
+				}
+
+				if inArray(dependency.dependencyName, list) {
+					exists = true
+				}
+
+				time.Sleep(5 * time.Second)
+			}
+			fmt.Print("Configmap exists\n")
+
+		case "secret":
+			secretClient := clientset.Core().Secrets(dependency.dependencyNamespace)
+			for exists := false; exists; exists = true {
+				list, err := secretClient.List(metav1.ListOptions{})
+
+				if err != nil {
+					panic(err)
+				}
+
+				if inArray(dependency.dependencyName, list) {
+					exists = true
+				}
+
+				time.Sleep(5 * time.Second)
+			}
+			fmt.Print("Secret exists\n")
 		}
 	}
 }
