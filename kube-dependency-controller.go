@@ -11,7 +11,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strconv"
+	"reflect"
+	"strings"
+	"time"
 
 	core "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -20,6 +22,12 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 	//"k8s.io/kubernetes/pkg/apis/core"
 )
+
+type dependency struct {
+	dependencyNamespace string
+	dependencyType      string
+	dependencyName      string
+}
 
 func homeDir() string {
 	if h := os.Getenv("HOME"); h != "" {
@@ -48,15 +56,47 @@ func buildExternalConfig(kubeconfig *string) *rest.Config {
 	return config
 }
 
+func parseDependenciesString(dependencies string) []dependency {
+	var dependenciesList []dependency
+	dependenciesArray := strings.Split(dependencies, ",")
+	for _, element := range dependenciesArray {
+		dependencyElements := strings.Split(element, "/")
+		dep := dependency{
+			dependencyNamespace: dependencyElements[0],
+			dependencyType:      dependencyElements[1],
+			dependencyName:      dependencyElements[2],
+		}
+		dependenciesList = append(dependenciesList, dep)
+	}
+	return dependenciesList
+}
+
+func inArray(val interface{}, array interface{}) (exists bool) {
+	exists = false
+
+	switch reflect.TypeOf(array).Kind() {
+	case reflect.Slice:
+		s := reflect.ValueOf(array)
+
+		for i := 0; i < s.Len(); i++ {
+			if reflect.DeepEqual(val, s.Index(i).Interface()) == true {
+				exists = true
+				return
+			}
+		}
+	}
+
+	return
+}
+
 var err error
 
 func main() {
 	var config *rest.Config
-	//namespaceName := os.Getenv("ENDPOINT_NAMESPACE_NAME")
 	kubernetesServiceHost := os.Getenv("KUBERNETES_SERVICE_HOST")
 	kubernetesServicePort := os.Getenv("KUBERNETES_SERVICE_PORT")
 	kubeconfigPath := parseConfig()
-	//deployments := os.Getenv("DEPLOYMENTS")
+	dependencies := parseDependenciesString(os.Getenv("DEPENDENCIES"))
 
 	//check if the app is running inside the kubernetes cluster
 	if (kubernetesServiceHost != "") && (kubernetesServicePort != "") {
@@ -78,18 +118,36 @@ func main() {
 
 	deploymentsClient := clientset.AppsV1().Deployments(core.NamespaceDefault)
 
-	list, err := deploymentsClient.List(metav1.ListOptions{})
-	if err != nil {
-		panic(err)
-	}
-	for _, d := range list.Items {
-		fmt.Printf(" * %s (%d replicas)\n", d.Name, *d.Spec.Replicas)
-	}
+	for _, dependency := range dependencies {
 
-	if "aaa" in list {
-		
-	}
+		switch dependency.dependencyType {
+		case "deployment":
+			for exists := false; exists; exists = true {
+				list, err := deploymentsClient.List(metav1.ListOptions{})
 
-	deployment, err := deploymentsClient.Get("aaa", metav1.GetOptions{})
-	fmt.Printf(strconv.Itoa(int(deployment.Status.ReadyReplicas)))
+				if err != nil {
+					panic(err)
+				}
+
+				if inArray(dependency.dependencyName, list) {
+					for ready := false; ready; ready = true {
+						deployment, err := deploymentsClient.Get(dependency.dependencyName, metav1.GetOptions{})
+
+						if err != nil {
+							panic(err)
+						}
+
+						if deployment.Status.Replicas == deployment.Status.ReadyReplicas {
+							ready = true
+						} else {
+							time.Sleep(5 * time.Second)
+						}
+					}
+				}
+
+				time.Sleep(5 * time.Second)
+			}
+			fmt.Print("ready")
+		}
+	}
 }
