@@ -19,7 +19,6 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
-	//"k8s.io/kubernetes/pkg/apis/core"
 )
 
 type dependency struct {
@@ -204,6 +203,7 @@ func main() {
 				time.Sleep(5 * time.Second)
 			}
 			fmt.Print("Statefulset is ready\n")
+
 		case "service":
 			serviceClient := clientset.Core().Services(dependency.dependencyNamespace)
 			for exists := false; exists; exists = true {
@@ -254,6 +254,38 @@ func main() {
 				time.Sleep(5 * time.Second)
 			}
 			fmt.Print("Secret exists\n")
+		case "job":
+			jobClient := clientset.BatchV1().Jobs(dependency.dependencyNamespace)
+			for exists := false; exists; exists = true {
+				list, err := jobClient.List(metav1.ListOptions{})
+
+				if err != nil {
+					panic(err)
+				}
+
+				if inArray(dependency.dependencyName, list) {
+					exists = true
+				}
+
+				time.Sleep(5 * time.Second)
+			}
+			fmt.Print("Job exists\n")
+		case "serviceaccount":
+			serviceAccountClient := clientset.Core().ServiceAccounts(dependency.dependencyNamespace)
+			for exists := false; exists; exists = true {
+				list, err := serviceAccountClient.List(metav1.ListOptions{})
+
+				if err != nil {
+					panic(err)
+				}
+
+				if inArray(dependency.dependencyName, list) {
+					exists = true
+				}
+
+				time.Sleep(5 * time.Second)
+			}
+			fmt.Print("Service account exists\n")
 		}
 	}
 }
